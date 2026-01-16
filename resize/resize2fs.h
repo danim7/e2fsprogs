@@ -78,12 +78,16 @@ typedef struct ext2_sim_progress *ext2_sim_progmeter;
 #define RESIZE_DEBUG_ITABLEMOVE		0x0008
 #define RESIZE_DEBUG_RTRACK		0x0010
 #define RESIZE_DEBUG_MIN_CALC		0x0020
+#define RESIZE_DEBUG_INODECOUNT		0x0040
 
 #define RESIZE_PERCENT_COMPLETE		0x0100
 #define RESIZE_VERBOSE			0x0200
 
 #define RESIZE_ENABLE_64BIT		0x0400
 #define RESIZE_DISABLE_64BIT		0x0800
+
+#define RESIZE_INCREASE_INODE_COUNT	0x1000
+#define RESIZE_DECREASE_INODE_COUNT	0x2000
 
 /*
  * This structure is used for keeping track of how much resources have
@@ -98,6 +102,12 @@ struct resource_track {
 	unsigned long long bytes_read;
 	unsigned long long bytes_written;
 };
+
+typedef enum {
+	itable_status_not_allocated = 0,	/*must be zero for calloc() */
+	itable_status_allocated = 1,
+	itable_status_populated = 2
+} itable_status;
 
 /*
  * The core state structure for the ext2 resizer
@@ -114,6 +124,14 @@ struct ext2_resize_struct {
 	blk64_t		needed_blocks;
 	int		flags;
 	char		*itable_buf;
+	
+	/*
+	 * Specific fields to change inode count
+	 */
+	unsigned int    new_inodes_per_group;
+	unsigned int    *evacuated_inodes;
+	itable_status   *new_itable_status;
+	dgrp_t          allocated_new_itables;
 
 	/*
 	 * For the block allocator
@@ -141,7 +159,8 @@ struct ext2_resize_struct {
 
 
 /* prototypes */
-extern errcode_t resize_fs(ext2_filsys fs, blk64_t *new_size, int flags,
+extern errcode_t resize_fs(ext2_filsys fs, blk64_t *new_size,
+                           unsigned int new_inodes_per_group, int flags,
 			   errcode_t	(*progress)(ext2_resize_t rfs,
 					    int pass, unsigned long cur,
 					    unsigned long max));
@@ -151,6 +170,7 @@ extern errcode_t adjust_fs_info(ext2_filsys fs, ext2_filsys old_fs,
 				blk64_t new_size);
 extern blk64_t calculate_minimum_resize_size(ext2_filsys fs, int flags);
 extern void adjust_new_size(ext2_filsys fs, blk64_t *sizep);
+extern errcode_t mark_table_blocks(ext2_filsys fs, ext2fs_block_bitmap bmap);
 
 
 /* extent.c */
