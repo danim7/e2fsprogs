@@ -291,15 +291,14 @@ static int check_space_last_group(ext2_filsys fs,
 			fprintf(stderr,
 			"The filesystem flex_bg feature is not set\n");
 		if (!fs->super->s_log_groups_per_flex)
-			fprintf(stderr,"The value of s_log_groups_per_flex is %u\n",
-			       fs->super->s_log_groups_per_flex);
+			fprintf(stderr,"The value of s_log_groups_per_flex is "
+				"%u\n", fs->super->s_log_groups_per_flex);
 		fprintf(stderr,"The last group only has %u movable blocks\n",
 		       movable_blocks);
-		fprintf(stderr,
-		    "This is not enough to allocate a new inode table of %u blocks\n",
-		     inode_blocks_per_group);
-		fprintf(stderr,
-		    "Under these conditions, it is not possible to continue.\n\n");
+		fprintf(stderr, "This is not enough to allocate a new inode "
+			"table of %u blocks\n", inode_blocks_per_group);
+		fprintf(stderr, "Under these conditions, it is not possible "
+			"to continue.\n\n");
 		fprintf(stderr,"You may try first one of these options:\n");
 		fprintf(stderr," - Use debugfs to %s%s%s\n",
 		       !ext2fs_has_feature_flex_bg(fs->
@@ -311,17 +310,17 @@ static int check_space_last_group(ext2_filsys fs,
 		       "set a value of log_groups_per_flex to 4 in the "
 		       "superblock (default mkfs value)"
 		       : "");
-		fprintf(stderr,
-		    " - Use resize2fs to grow the filesystem by at least %u blocks\n",
-		     inode_blocks_per_group - movable_blocks);
+		fprintf(stderr, " - Use resize2fs to grow the filesystem by "
+			"at least %u blocks\n",
+			inode_blocks_per_group - movable_blocks);
 		if (fs->group_desc_count > 1)
 			fprintf(stderr,
-			    " - Use resize2fs to shrink the filesystem to %llu blocks, "
-			    "in order to get rid of the last group\n",
+			    " - Use resize2fs to shrink the filesystem to %llu "
+			    "blocks, in order to get rid of the last group\n",
 			     (blk64_t) EXT2_BLOCKS_PER_GROUP(fs->super) *
 			     (fs->group_desc_count - 1));
-		fprintf(stderr,
-		    "After that, you can try again to change the inode count\n");
+		fprintf(stderr, "After that, you can try again to change "
+			"the inode count\n");
 		exit(1);
 	}
 
@@ -338,8 +337,7 @@ static ext2_ino_t find_last_used_inode(ext2_filsys fs)
 {
 	ext2_ino_t ino_num = fs->super->s_inodes_count;
 	if (ext2fs_read_inode_bitmap(fs)) {
-		fprintf(stderr,
-		    "Error while reading inode bitmap\n");
+		fprintf(stderr, "Error while reading inode bitmap\n");
 		exit(-1);
 	}
 	while (ino_num && !ext2fs_test_inode_bitmap2(fs->inode_map, ino_num))
@@ -373,16 +371,14 @@ static ext2_ino_t parse_count_param(char *p, ext2_ino_t current_count)
 
 	if (type == '-') {
 		if (current_count <= n)
-			fprintf(stderr,
-				"the resulting count will be under 0 for param: %s\n",
-				--p);
+			fprintf(stderr, "the resulting count will be under 0 "
+				"for param: %s\n", --p);
 		else
 			res = current_count - n;
 	} else if (type == '+') {
 		if (current_count > MAX_INODE - n)
-			fprintf(stderr,
-				"the resulting count will overflow for param: %s\n",
-				p);
+			fprintf(stderr, "the resulting count will overflow "
+				"for param: %s\n", p);
 		else
 			res = current_count + n;
 	} else {
@@ -392,19 +388,27 @@ static ext2_ino_t parse_count_param(char *p, ext2_ino_t current_count)
 }
 
 static int calculate_new_inodes_per_group(ext2_filsys fs,
-					  long long unsigned int value,
+					  ext2_ino_t new_count,
 					  unsigned int *ipg, int force,
 					  int flags)
 {
 
-	int inode_ratio, blocksize = EXT2_BLOCK_SIZE(fs->super);
-	unsigned int new_inode_count, new_inodes_per_group,
-	    inode_blocks_per_group_rounded, required_inodes =
-	    fs->super->s_inodes_count - fs->super->s_free_inodes_count,
-	    max_inode_blocks_per_group =
-	    blocksize * 8 * EXT2_INODE_SIZE(fs->super) / blocksize;
-	blk64_t free_space, current_inode_blocks_space, new_inode_blocks_space,
-	    safety_margin;
+	int		inode_ratio,
+			blocksize = EXT2_BLOCK_SIZE(fs->super);
+	unsigned int	new_inode_count,
+			new_inodes_per_group,
+	    		inode_blocks_per_group_rounded,
+	    		required_inodes,
+	   		max_inode_blocks_per_group;
+	blk64_t		free_space,
+			current_inode_blocks_space,
+			new_inode_blocks_space,
+			safety_margin;
+
+	required_inodes = fs->super->s_inodes_count
+				- fs->super->s_free_inodes_count;
+	max_inode_blocks_per_group = blocksize * 8 * EXT2_INODE_SIZE(fs->super)
+					/ blocksize;
 
 	/*in KiB */
 	current_inode_blocks_space = ((blk64_t) fs->inode_blocks_per_group)
@@ -419,16 +423,19 @@ static int calculate_new_inodes_per_group(ext2_filsys fs,
 		printf("Current inode ratio: %llu bytes-per-inode\n",
 		       ext2fs_blocks_count(fs->super) * blocksize /
 		       fs->super->s_inodes_count);
-		printf("Current inodes per group: %u\n", fs->super->s_inodes_per_group);
+		printf("Current inodes per group: %u\n",
+			fs->super->s_inodes_per_group);
 		printf("Current space used by inode tables: ");
 
 		if (current_inode_blocks_space > 1048576) {
 			printf("%.2f GiB\n",
 			       (double)current_inode_blocks_space / 1048576);
 		} else if (current_inode_blocks_space > 1024) {
-			printf("%.2f MiB\n", (double)current_inode_blocks_space / 1024);
+			printf("%.2f MiB\n",
+				(double)current_inode_blocks_space / 1024);
 		} else {
-			printf("%.2f KiB\n", (double)current_inode_blocks_space);
+			printf("%.2f KiB\n",
+				(double)current_inode_blocks_space);
 		}
 
 		printf("\nInodes currently used by the filesystem: %u\n",
@@ -441,25 +448,19 @@ static int calculate_new_inodes_per_group(ext2_filsys fs,
 		} else {
 			printf("%.2f KiB\n", (double)free_space);
 		}
-		printf("\nInode count requested by the user: %llu\n\n", value);
+		printf("\nInode count requested by the user: %u\n", new_count);
 	}
 #endif
 
-	if (value < EXT2_FIRST_INODE(fs->super) + 1) {
+	if (new_count < EXT2_FIRST_INODE(fs->super) + 1) {
 		fprintf(stderr,
 		    "The requested inode count is too low. Minimum is %u\n\n",
 		     EXT2_FIRST_INODE(fs->super) + 1);
 		exit(1);
 	}
-	if (value > 0xffffffff) {
-		fprintf(stderr,
-		    "The requested inode count is too high. Maximum is %u\n\n",
-		     0xffffffff);
-		exit(1);
-	}
 
-	new_inodes_per_group =
-	    ext2fs_div64_ceil(value, fs->group_desc_count);
+	new_inodes_per_group = ext2fs_div64_ceil(new_count,
+						fs->group_desc_count);
 	
 
 	/*
@@ -476,35 +477,34 @@ static int calculate_new_inodes_per_group(ext2_filsys fs,
 		}
 	}
 	inode_blocks_per_group_rounded =
-	    (((new_inodes_per_group * EXT2_INODE_SIZE(fs->super)) + blocksize -
-	      1) / blocksize);
+	    (((new_inodes_per_group * EXT2_INODE_SIZE(fs->super))
+		+ blocksize - 1) / blocksize);
 
 	if (ext2fs_has_feature_bigalloc(fs->super)
 	    && inode_blocks_per_group_rounded > fs->inode_blocks_per_group
 	    && inode_blocks_per_group_rounded % EXT2FS_CLUSTER_RATIO(fs)) {
 
-		/*The increaser will allocate different clusters to each inode table,
-		they cannot be shared by different itables. Therefore, make sure the
-		whole cluster is used, otherwise, the remaining blocks would be wasted.
-		Ideally, we could optimize by trying to allocate contiguous blocks and
-		compact itables so they share the same cluster... */
+		/*When increasing the inode count on a bigalloc fs, the
+		allocation functions will put each inode table in different
+		clusters, ie.: a given cluster cannot be shared by multiple
+		itables. Therefore, make sure the whole cluster is used,
+		otherwise the remaining blocks would be wasted. */
 
-		inode_blocks_per_group_rounded +=
-		    EXT2FS_CLUSTER_RATIO(fs) -
-		    (inode_blocks_per_group_rounded % EXT2FS_CLUSTER_RATIO(fs));
+		inode_blocks_per_group_rounded += (EXT2FS_CLUSTER_RATIO(fs) -
+		  (inode_blocks_per_group_rounded % EXT2FS_CLUSTER_RATIO(fs)));
 #ifdef RESIZE2FS_DEBUG
 		if (flags & RESIZE_DEBUG_INODECOUNT)
-			printf
-		    ("New inode blocks per group (after rounding to fill last itable cluster): %u\n",
-		     inode_blocks_per_group_rounded);
+			printf(
+			"New inode blocks per group (after rounding to fill last "
+			"itable cluster): %u\n", inode_blocks_per_group_rounded);
 #endif
 
 	} else {
 #ifdef RESIZE2FS_DEBUG
 		if (flags & RESIZE_DEBUG_INODECOUNT)
-			printf
-		    ("New inode blocks per group (after rounding to fill last itable block): %u\n",
-		     inode_blocks_per_group_rounded);
+			printf(
+			"New inode blocks per group (after rounding to fill last "
+			"itable block): %u\n", inode_blocks_per_group_rounded);
 #endif
 	}
 
@@ -513,94 +513,96 @@ static int calculate_new_inodes_per_group(ext2_filsys fs,
 		    && inode_blocks_per_group_rounded >
 		    fs->inode_blocks_per_group) {
 			printf
-			    ("  inode_blocks_per_group was %u, forced to %i\n",
+			    ("inode_blocks_per_group was %u, forced to %i\n",
 			     inode_blocks_per_group_rounded,
 			     EXT2FS_CLUSTER_RATIO(fs));
 			inode_blocks_per_group_rounded =
 			    EXT2FS_CLUSTER_RATIO(fs);
 		} else if (inode_blocks_per_group_rounded < 1) {
-			printf("  inode_blocks_per_group was %u, forced to 1\n",
+			printf("inode_blocks_per_group was %u, forced to 1\n",
 			       inode_blocks_per_group_rounded);
 			inode_blocks_per_group_rounded = 1;
 		}
 	} else {
-		if (inode_blocks_per_group_rounded > max_inode_blocks_per_group) {
+		if (inode_blocks_per_group_rounded > max_inode_blocks_per_group)
+		{
 			printf
-			    ("  inode_blocks_per_group was %u, forced to %u as the "
-			    "remaining inodes would not be addressable in the inode bitmap\n",
-			     inode_blocks_per_group_rounded,
+			    ("inode_blocks_per_group was %u, forced to %u as "
+			    "the remaining inodes would not be addressable in "
+			    "the inode bitmap\n",inode_blocks_per_group_rounded,
 			     max_inode_blocks_per_group);
 			inode_blocks_per_group_rounded =
-			    max_inode_blocks_per_group;
+				max_inode_blocks_per_group;
 		}
 	}
 
-	if (fs->group_desc_count *
-	    ((blk64_t) inode_blocks_per_group_rounded * blocksize /
-	     EXT2_INODE_SIZE(fs->super)) > 0xffffffff) {
-		printf
-		    ("ERROR: the new inode count (%llu) is above the max allowed value (%u)\n",
-		     fs->group_desc_count *
+	if (fs->group_desc_count * ((blk64_t) inode_blocks_per_group_rounded
+		* blocksize / EXT2_INODE_SIZE(fs->super)) > 0xffffffff) {
+		fprintf(stderr,
+		    "ERROR: the new inode count (%llu) is above the max "
+		    "allowed value (%u)\n", fs->group_desc_count *
 		     ((blk64_t) inode_blocks_per_group_rounded * blocksize /
 		      EXT2_INODE_SIZE(fs->super)), 0xffffffff);
 		exit(1);
 	}
 
-	new_inode_count =
-	    fs->group_desc_count * (inode_blocks_per_group_rounded * blocksize /
-				    EXT2_INODE_SIZE(fs->super));
+	new_inode_count = fs->group_desc_count *
+		(inode_blocks_per_group_rounded * blocksize
+		/ EXT2_INODE_SIZE(fs->super));
 
 	if (new_inode_count < EXT2_FIRST_INODE(fs->super) + 1) {
 		fprintf(stderr, "The inode count is too low!\n");
 		exit(1);
 	}
 
-	new_inodes_per_group =
-	    inode_blocks_per_group_rounded * blocksize /
-	    EXT2_INODE_SIZE(fs->super);
+	new_inodes_per_group = inode_blocks_per_group_rounded
+			* blocksize / EXT2_INODE_SIZE(fs->super);
 
 
 	if (new_inodes_per_group > EXT2_MAX_INODES_PER_GROUP(fs->super)) {
 		fprintf(stderr,
-		    "ERROR: the new inodes per group is above the max allowed value (%u)\n",
-		     EXT2_MAX_INODES_PER_GROUP(fs->super));
+		    "ERROR: the new inodes per group is above the max "
+		    "allowed value (%u)\n",
+		    EXT2_MAX_INODES_PER_GROUP(fs->super));
 		exit(1);
 	}
 
 
-	new_inode_blocks_space =
-	    ((blk64_t) inode_blocks_per_group_rounded) * fs->group_desc_count *
-	    (blocksize / 1024);
+	new_inode_blocks_space = ((blk64_t) inode_blocks_per_group_rounded)
+				* fs->group_desc_count * (blocksize / 1024);
 	    
 #ifdef RESIZE2FS_DEBUG
 	if (flags & RESIZE_DEBUG_INODECOUNT) {	    
 		printf("New inode count: %u\n", new_inode_count);    
 		printf("New inode ratio: %llu bytes-per-inode\n",
-		         ext2fs_blocks_count(fs->super) * blocksize / new_inode_count);
+		         ext2fs_blocks_count(fs->super) * blocksize
+		         / new_inode_count);
 		printf("New inodes per group: %u\n", new_inodes_per_group);
 		printf("New space used by inode tables: ");
 		if (new_inode_blocks_space > 1048576) {	
 		printf("%.2f GiB\n", (double)new_inode_blocks_space / 1048576);
 		} else if (new_inode_blocks_space > 1024) {
-			printf("%.2f MiB\n", (double)new_inode_blocks_space / 1024);
+			printf("%.2f MiB\n",
+				(double)new_inode_blocks_space / 1024);
 		} else {
-			printf("%.2f KiB\n", (double)new_inode_blocks_space);
+			printf("%.2f KiB\n",
+				(double)new_inode_blocks_space);
 		}
 		printf("\n");
 	}
 #endif
 
 	if (required_inodes > new_inode_count) {
-		fprintf(stderr,
-		    "The chosen inode count will not provide enough inodes for "
-		    "the existing filesystem, please choose a higher inode count\n");
+		fprintf(stderr, "The chosen inode count will not provide "
+			"enough inodes for tthe existing filesystem, please "
+			"choose a higher inode count\n");
 		exit(1);
 	}
 
 	if (new_inode_count == fs->super->s_inodes_count) {
 		printf
-		    ("The existing filesystem already has %u inodes. No change needed.\n",
-		     new_inode_count);
+		    ("The existing filesystem already has %u inodes. "
+		    "No change needed.\n", new_inode_count);
 		exit(0);
 	}
 
@@ -608,24 +610,24 @@ static int calculate_new_inodes_per_group(ext2_filsys fs,
 	/* this safety_margin shall be much more than enough */
 		safety_margin = new_inode_blocks_space / 2;
 		if (new_inode_blocks_space + safety_margin > free_space) {
-			if (new_inode_blocks_space -
-			    current_inode_blocks_space > free_space) {
-				fprintf(stderr,
-				    "The free space in the filesystem is too low to perform "
-				    "the change:\nIt will not be possible to allocate large "
-				    "enough inode tables for the chosen inode count\n");
+			if (new_inode_blocks_space - current_inode_blocks_space
+				> free_space) {
+				fprintf(stderr, "The free space in the "
+				"filesystem is too low to perform the change:"
+				"\nIt will not be possible to allocate large "
+				"enough inode tables for the chosen inode "
+				"count\n");
 				exit(1);
 			}
 			printf
-			    ("The filesystem doesn't have enough free space to perform "
-			    "the change in a safe way.\n");
+			    ("The filesystem doesn't have enough free space "
+			    "to perform the change in a safe way.\n");
 			if (force) {
-				printf
-				    ("As the force flag has been provided, we will "
-				    "proceed with the change\n");
+				printf("As the force flag has been provided,"
+				    " we will proceed with the change\n");
 			} else {
-				printf
-				    ("Re-run with the force flag if you want to try anyway.\n");
+				printf("Re-run with the force flag if you "
+				    "want to try anyway.\n");
 				exit(1);
 			}
 		}
@@ -633,7 +635,7 @@ static int calculate_new_inodes_per_group(ext2_filsys fs,
 		if (!ext2fs_has_feature_flex_bg(fs->super)
 		    || !fs->super->s_log_groups_per_flex) {
 			check_space_last_group(fs,
-					       inode_blocks_per_group_rounded);
+				inode_blocks_per_group_rounded);
 		}
 	}
 
@@ -1054,40 +1056,39 @@ int main (int argc, char ** argv)
 			if (new_inodes_per_group >
 			    fs->super->s_inodes_per_group) {
 				if (force) {
-					printf
-					    ("Increasing inode count in a filesystem "
-					    "with stable_inodes, because the force "
-					    "flag is set\n");
+					printf("Increasing inode count in a "
+					"filesystem with stable_inodes, because"
+					" the force flag is passed\n");
 				} else {
-					printf
-					    ("Asked to increase the inode count in a "
-					    "filesystem with stable_inodes feature flag.\n"
-					     "Please note it might not be possible to "
-					     "reduce the inode count later because of this "
-					     "flag.\nRestart with force parameter to proceed\n");
+					fprintf(stderr, "Asked to increase the "
+					"inode count in a filesystem with "
+					"stable_inodes feature flag.\nPlease "
+					"note it might not be possible to "
+					"reduce the inode count later because "
+					"of this flag.\nRestart with force "
+					"flag to proceed\n");
 					goto errout;
 				}
 			} else {
 				last_used_inode = find_last_used_inode(fs);
 				if (new_inodes_per_group *
 				    fs->group_desc_count < last_used_inode) {
-					fprintf(stderr,
-					    "Cannot reduce inode count in this filesystem "
-					    "because it has the stable_inodes feature flag and\n"
-					     "the used inode with the highest number is %u, "
-					     "while the resulting filesystem would have %u inodes.\n",
-					     last_used_inode,
-					     new_inodes_per_group *
-					     fs->group_desc_count);
+					fprintf(stderr, "Cannot reduce inode "
+					"count in this filesystem because it "
+					"has the stable_inodes feature flag "
+					"and the used inode with the highest "
+					"number is %u, while the resulting "
+					"filesystem would have %u inodes.\n",
+					last_used_inode, new_inodes_per_group *
+							fs->group_desc_count);
 					goto errout;
 				}
-				fprintf(stderr,
-				    "Reducing inode count in filesystem with stable_inodes "
-				    "feature flag.\nThe used inode with the highest number "
-				    "is %u. The resulting filesystem will have %u inodes.\n",
-				     last_used_inode,
-				     new_inodes_per_group *
-				     fs->group_desc_count);
+				fprintf(stderr, "Reducing inode count in a "
+				"filesystem with stable_inodes feature flag."
+				"\nThe used inode with the highest number is "
+				"%u. The resulting filesystem will have %u "
+				"inodes.\n", last_used_inode,
+				new_inodes_per_group * fs->group_desc_count);
 			}
 		}
 
@@ -1112,7 +1113,7 @@ int main (int argc, char ** argv)
 	    flags & (RESIZE_ENABLE_64BIT | RESIZE_DISABLE_64BIT)) {
 	    	fprintf(stderr,
 	    	_("Cannot change 64-bits mode and inode count simultaneously\n"));
-		goto success_exit;
+		goto errout;
 	}
 	if ((flags & RESIZE_ENABLE_64BIT) &&
 	    ext2fs_has_feature_64bit(fs->super)) {

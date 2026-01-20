@@ -1819,51 +1819,29 @@ static errcode_t resize2fs_get_alloc_block(ext2_filsys fs,
 		       (unsigned long long) blk);
 #endif
 
-	ext2fs_mark_block_bitmap2(rfs->old_fs->block_map, blk);
-	ext2fs_mark_block_bitmap2(rfs->new_fs->block_map, blk);
 
-	group = ext2fs_group_of_blk2(rfs->old_fs, blk);
-	ext2fs_clear_block_uninit(rfs->old_fs, group);
-	group = ext2fs_group_of_blk2(rfs->new_fs, blk);
-	ext2fs_clear_block_uninit(rfs->new_fs, group);
+	if (rfs->flags & RESIZE_INCREASE_INODE_COUNT) {
+		if (fs == rfs->new_fs) {
+			ext2fs_block_alloc_stats2(rfs->old_fs, blk, +1);
 
-	*ret = (blk64_t) blk;
-	return 0;
-}
+			ext2fs_mark_block_bitmap2(rfs->new_fs->block_map, blk);
+			group = ext2fs_group_of_blk2(rfs->new_fs, blk);
+			ext2fs_clear_block_uninit(rfs->new_fs, group);
+		} else {
+			ext2fs_block_alloc_stats2(rfs->new_fs, blk, +1);
 
-static errcode_t resize2fs_get_alloc_block_for_inode_count_change(ext2_filsys fs,
-				blk64_t goal EXT2FS_ATTR((unused)), blk64_t *ret)
-{
-	ext2_resize_t rfs = (ext2_resize_t) fs->priv_data;
-	blk64_t blk;
-	int group;
-	int is_new_fs = (fs == rfs->new_fs);
-
-	blk = get_new_block(rfs);
-	if (!blk)
-		return ENOSPC;
-
-#ifdef RESIZE2FS_DEBUG
-	if (rfs->flags & RESIZE_DEBUG_INODECOUNT)
-		printf("resize2fs_get_alloc_block_for_inode_count_change "
-			"allocating %llu\n", (unsigned long long) blk);
-#endif
-
-	/* We need to update stats (which will also mark block and clear uninit)
-	 * in the other fs to avoid bitmap inconsistencies in fsck for expanded
-	 * extent trees whose new blocks get allocated by this function */
-	if (is_new_fs) {
-		ext2fs_block_alloc_stats2(rfs->old_fs, blk, +1);
-
-		ext2fs_mark_block_bitmap2(rfs->new_fs->block_map, blk);
-		group = ext2fs_group_of_blk2(rfs->new_fs, blk);
-		ext2fs_clear_block_uninit(rfs->new_fs, group);
+			ext2fs_mark_block_bitmap2(rfs->old_fs->block_map, blk);
+			group = ext2fs_group_of_blk2(rfs->old_fs, blk);
+			ext2fs_clear_block_uninit(rfs->old_fs, group);
+		}
 	} else {
-		ext2fs_block_alloc_stats2(rfs->new_fs, blk, +1);
-
 		ext2fs_mark_block_bitmap2(rfs->old_fs->block_map, blk);
+		ext2fs_mark_block_bitmap2(rfs->new_fs->block_map, blk);
+
 		group = ext2fs_group_of_blk2(rfs->old_fs, blk);
 		ext2fs_clear_block_uninit(rfs->old_fs, group);
+		group = ext2fs_group_of_blk2(rfs->new_fs, blk);
+		ext2fs_clear_block_uninit(rfs->new_fs, group);
 	}
 
 	*ret = (blk64_t) blk;
@@ -1885,20 +1863,16 @@ static errcode_t block_mover(ext2_resize_t rfs)
 	int			to_move, moved;
 	ext2_badblocks_list	badblock_list = 0;
 	int			bb_modified = 0;
-	ext2_filsys             fs_bb_inode;
+	ext2_filsys             fs_bb_inode = old_fs;
 	
 	if (rfs->flags & RESIZE_DECREASE_INODE_COUNT)
 	        return 0;
 
-	if (rfs->flags & RESIZE_INCREASE_INODE_COUNT) {
+	fs->get_alloc_block = resize2fs_get_alloc_block;
+	old_fs->get_alloc_block = resize2fs_get_alloc_block;
+
+	if (rfs->flags & RESIZE_INCREASE_INODE_COUNT)
 		fs_bb_inode = get_fs_of_ino(rfs, EXT2_BAD_INO);
-		fs->get_alloc_block = resize2fs_get_alloc_block_for_inode_count_change;
-		old_fs->get_alloc_block = resize2fs_get_alloc_block_for_inode_count_change;
-	} else {
-		fs_bb_inode = rfs->old_fs;
-		fs->get_alloc_block = resize2fs_get_alloc_block;
-		old_fs->get_alloc_block = resize2fs_get_alloc_block;
-	}
 
 	retval = ext2fs_read_bb_inode(fs_bb_inode, &badblock_list);
 	if (retval)
@@ -2349,7 +2323,7 @@ static errcode_t inode_scan_and_fix(ext2_resize_t rfs)
 			| RESIZE_DECREASE_INODE_COUNT)))
 	      start_to_move = (rfs->new_fs->group_desc_count *
                          rfs->new_fs->super->s_inodes_per_group);
-        else /*the new_fs is still not updated with the new_inodes_per_group*/
+        else /*the new_fs is not yet updated with the new_inodes_per_group*/
               start_to_move = (rfs->new_fs->group_desc_count *
                          rfs->new_inodes_per_group);   
 
@@ -3564,9 +3538,10 @@ static errcode_t reubicate_and_free_itables(ext2_resize_t rfs)
 
 	for (group = 1; group < rfs->new_fs->group_desc_count; group++) {
 
-		if (ext2fs_inode_table_loc(rfs->old_fs, group - 1) +
-		    rfs->old_fs->inode_blocks_per_group ==
-		    ext2fs_inode_table_loc(rfs->old_fs, group)) {
+		if (ext2fs_has_feature_flex_bg(rfs->new_fs->super)
+		      && ext2fs_inode_table_loc(rfs->old_fs, group - 1) +
+			rfs->old_fs->inode_blocks_per_group ==
+			ext2fs_inode_table_loc(rfs->old_fs, group)) {
 #ifdef RESIZE2FS_DEBUG
 			if (rfs->flags & RESIZE_DEBUG_INODECOUNT)
 				printf("moving itables, contiguous groups "
@@ -3633,11 +3608,13 @@ static errcode_t reubicate_and_free_itables(ext2_resize_t rfs)
 	return retval;
 }
 
-/*****************************************************************************************************
-We will migrate the inodes in-place to the existing tables. We do not allocate new itables when
-reducing the inode count. The advantage of this approach is that we don't need any free blocks in the
-filesystem for this operation. It could be done in a FS with zero free blocks, which might also be the
-reason to run the reducer: free some space for data.
+/******************************************************************************
+We will migrate the inodes in-place to the existing tables. We do not allocate 
+new itables when reducing the inode count. The advantage of this approach is 
+that we don't need any free blocks in the filesystem for this operation. It 
+could be done in a fs with zero free blocks, which might also be the reason to 
+run the reducer: free some space for data. What follow is a simple proof that
+there is no risk of overwriting an inode before needing to read it.
 
 Let:
 g: block group, 0-based
@@ -3648,22 +3625,26 @@ inum: inode number
 This gives the inode number formula:
 inum = g * ipg + pos
 
-When reducing the inode count, we start from the highest inode number and go down to 1.
+When reducing the inode count, we start from the highest inode number 
+and go down to 1.
 
 This operation shall not overwrite a needed inode before it is migrated:
-To overwrite a needed inode in a given g & pos before being migrated, its inum_old shall be
-less than its inum_new, as the migration loop is moving backwards. So:
+To overwrite a needed inode in a given g & pos before being migrated, its
+inum_old shall be less than its inum_new, as the migration loop is 
+moving backwards. So:
 
 inum_old < inum_new
 
-Substitute. As we talk about the same memory address, g & pos are the same, only ipg changes:
+Substitute. As we talk about the same memory position, g & pos are the same,
+only ipg changes:
 
 g * ipg_old + pos < g * ipg_new + pos
 
 Thus, an overwrite will require ipg_olg < ipg_new.
 However, we are reducing the inode count, so we are doing ipg_old > ipg_new.
-Therefore, the migration loop will not overwrite needed inodes before migrating them.
-****************************************************************************************************/
+Therefore, the migration loop will not overwrite needed inodes before
+migrating them.
+******************************************************************************/
 static errcode_t migrate_inodes_backwards_loop(ext2_resize_t rfs)
 {
 	ext2_ino_t ino;
