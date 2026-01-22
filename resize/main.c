@@ -249,33 +249,33 @@ err:
 }
 
 /*
- * Check corner case: we want to increase inode table in
- * a filesystem with no flex_bg and very small last group
+ * Check corner case: we want to increase the inode table in
+ * a filesystem with no flex_bg and a very small last group
  */
-static int check_space_last_group(ext2_filsys fs,
+static errcode_t check_space_last_group(ext2_filsys fs,
 				  unsigned int inode_blocks_per_group)
 {
 
-	ext2fs_block_bitmap meta_bmap;
+	ext2fs_block_bitmap meta_bmap = NULL;
 	blk64_t b;
-	errcode_t retval;
+	errcode_t retval = 0;
 	unsigned int movable_blocks = 0;
 	ext2_badblocks_list badblock_list = 0;
 
 	retval =
 	    ext2fs_allocate_block_bitmap(fs, _("meta-data blocks"), &meta_bmap);
 	if (retval)
-		return retval;
+		goto errout;
 
 	retval = mark_table_blocks(fs, meta_bmap);
 	if (retval)
-		return retval;
+		goto errout;
 
 	retval = ext2fs_read_bb_inode(fs, &badblock_list);
 	if (retval) {
 		fprintf(stderr,
 		    "Error while reading badblock list\n");
-		exit(1);
+		goto errout;
 	}
 
 	for (b = ext2fs_group_first_block2(fs, fs->group_desc_count - 1);
@@ -321,7 +321,7 @@ static int check_space_last_group(ext2_filsys fs,
 			     (fs->group_desc_count - 1));
 		fprintf(stderr, "After that, you can try again to change "
 			"the inode count\n");
-		exit(1);
+		retval = 1;
 	}
 
  errout:
@@ -330,7 +330,7 @@ static int check_space_last_group(ext2_filsys fs,
 	if (badblock_list)
 		ext2fs_badblocks_list_free(badblock_list);
 
-	return 0;
+	return retval;
 }
 
 static ext2_ino_t find_last_used_inode(ext2_filsys fs)
@@ -338,7 +338,7 @@ static ext2_ino_t find_last_used_inode(ext2_filsys fs)
 	ext2_ino_t ino_num = fs->super->s_inodes_count;
 	if (ext2fs_read_inode_bitmap(fs)) {
 		fprintf(stderr, "Error while reading inode bitmap\n");
-		exit(-1);
+		exit(1);
 	}
 	while (ino_num && !ext2fs_test_inode_bitmap2(fs->inode_map, ino_num))
 		ino_num--;
@@ -387,12 +387,13 @@ static ext2_ino_t parse_count_param(char *p, ext2_ino_t current_count)
 	return res;
 }
 
-static int calculate_new_inodes_per_group(ext2_filsys fs,
-					  ext2_ino_t new_count,
+static errcode_t calculate_new_inodes_per_group(ext2_filsys fs,
+					  ext2_ino_t requested_count,
 					  unsigned int *ipg, int force,
 					  int flags)
 {
 
+	errcode_t	retval = 0;
 	int		inode_ratio,
 			blocksize = EXT2_BLOCK_SIZE(fs->super);
 	unsigned int	new_inode_count,
@@ -448,18 +449,19 @@ static int calculate_new_inodes_per_group(ext2_filsys fs,
 		} else {
 			printf("%.2f KiB\n", (double)free_space);
 		}
-		printf("\nInode count requested by the user: %u\n", new_count);
+		printf("\nInode count requested by the user: %u\n\n",
+			requested_count);
 	}
 #endif
 
-	if (new_count < EXT2_FIRST_INODE(fs->super) + 1) {
+	if (requested_count < EXT2_FIRST_INODE(fs->super) + 1) {
 		fprintf(stderr,
 		    "The requested inode count is too low. Minimum is %u\n\n",
 		     EXT2_FIRST_INODE(fs->super) + 1);
-		exit(1);
+		return 1;
 	}
 
-	new_inodes_per_group = ext2fs_div64_ceil(new_count,
+	new_inodes_per_group = ext2fs_div64_ceil(requested_count,
 						fs->group_desc_count);
 	
 
@@ -543,7 +545,7 @@ static int calculate_new_inodes_per_group(ext2_filsys fs,
 		    "allowed value (%u)\n", fs->group_desc_count *
 		     ((blk64_t) inode_blocks_per_group_rounded * blocksize /
 		      EXT2_INODE_SIZE(fs->super)), 0xffffffff);
-		exit(1);
+		return 1;
 	}
 
 	new_inode_count = fs->group_desc_count *
@@ -552,7 +554,7 @@ static int calculate_new_inodes_per_group(ext2_filsys fs,
 
 	if (new_inode_count < EXT2_FIRST_INODE(fs->super) + 1) {
 		fprintf(stderr, "The inode count is too low!\n");
-		exit(1);
+		return 1;
 	}
 
 	new_inodes_per_group = inode_blocks_per_group_rounded
@@ -564,7 +566,7 @@ static int calculate_new_inodes_per_group(ext2_filsys fs,
 		    "ERROR: the new inodes per group is above the max "
 		    "allowed value (%u)\n",
 		    EXT2_MAX_INODES_PER_GROUP(fs->super));
-		exit(1);
+		return 1;
 	}
 
 
@@ -594,16 +596,16 @@ static int calculate_new_inodes_per_group(ext2_filsys fs,
 
 	if (required_inodes > new_inode_count) {
 		fprintf(stderr, "The chosen inode count will not provide "
-			"enough inodes for tthe existing filesystem, please "
+			"enough inodes for the existing filesystem, please "
 			"choose a higher inode count\n");
-		exit(1);
+		return 1;
 	}
 
 	if (new_inode_count == fs->super->s_inodes_count) {
-		printf
-		    ("The existing filesystem already has %u inodes. "
-		    "No change needed.\n", new_inode_count);
-		exit(0);
+		printf("The existing filesystem already has %u inodes. "
+			"No change needed.\n", new_inode_count);
+		*ipg = new_inodes_per_group;
+		return 0;
 	}
 
 	if (new_inode_count > fs->super->s_inodes_count) {
@@ -611,13 +613,13 @@ static int calculate_new_inodes_per_group(ext2_filsys fs,
 		safety_margin = new_inode_blocks_space / 2;
 		if (new_inode_blocks_space + safety_margin > free_space) {
 			if (new_inode_blocks_space - current_inode_blocks_space
-				> free_space) {
+				>= free_space) {
 				fprintf(stderr, "The free space in the "
 				"filesystem is too low to perform the change:"
 				"\nIt will not be possible to allocate large "
 				"enough inode tables for the chosen inode "
 				"count\n");
-				exit(1);
+				return 1;
 			}
 			printf
 			    ("The filesystem doesn't have enough free space "
@@ -628,19 +630,19 @@ static int calculate_new_inodes_per_group(ext2_filsys fs,
 			} else {
 				printf("Re-run with the force flag if you "
 				    "want to try anyway.\n");
-				exit(1);
+				return 1;
 			}
 		}
 
 		if (!ext2fs_has_feature_flex_bg(fs->super)
 		    || !fs->super->s_log_groups_per_flex) {
-			check_space_last_group(fs,
+			retval = check_space_last_group(fs,
 				inode_blocks_per_group_rounded);
 		}
 	}
 
 	*ipg = new_inodes_per_group;
-	return 0;
+	return retval;
 
 }
 
@@ -1042,15 +1044,13 @@ int main (int argc, char ** argv)
 		if (!new_inode_count)
 			goto errout;
 
-		retval =
-		    calculate_new_inodes_per_group(fs, new_inode_count,
+		retval = calculate_new_inodes_per_group(fs, new_inode_count,
 						   &new_inodes_per_group,
 						   force, flags);
-
-
-		if (retval) {
+		if (retval)
 			goto errout;
-		}
+		if (new_inodes_per_group == fs->super->s_inodes_per_group)
+			goto success_exit;
 
 		if (ext2fs_has_feature_stable_inodes(fs->super)) {
 			if (new_inodes_per_group >

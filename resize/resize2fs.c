@@ -2349,6 +2349,8 @@ static errcode_t inode_scan_and_fix(ext2_resize_t rfs)
 	 * First, copy all of the inodes that need to be moved
 	 * elsewhere in the inode table
 	 */
+	rfs->old_fs->flags |= EXT2_FLAG_IGNORE_CSUM_ERRORS;
+	rfs->new_fs->flags |= EXT2_FLAG_IGNORE_CSUM_ERRORS;
 	for (ino = 1; ino <= rfs->old_fs->super->s_inodes_count; ino++) {
 		if (!ino)
 			break;
@@ -2357,8 +2359,8 @@ static errcode_t inode_scan_and_fix(ext2_resize_t rfs)
 			fs = get_fs_of_ino(rfs, ino);
 
 		retval = ext2fs_read_inode_full(fs, ino, inode, inode_size);
-		if (ino > 1
-			&& ext2fs_group_of_ino(rfs->old_fs, ino)
+		if (retval) goto errout;
+		if (ino > 1 && ext2fs_group_of_ino(rfs->old_fs, ino)
 				!= ext2fs_group_of_ino(rfs->old_fs, ino-1))
 		        progress_callback(rfs->old_fs, NULL,
 		        	ext2fs_group_of_ino(rfs->old_fs, ino-1), rfs);
@@ -2430,7 +2432,6 @@ remap_blocks:
 		 * blocks for inode remapping.  Need to write out dir blocks
 		 * with new inode numbers if we have metadata_csum enabled.
 		 */
-		fs->flags |= EXT2_FLAG_IGNORE_CSUM_ERRORS;
 		if (ext2fs_inode_has_valid_blocks2(fs, inode) &&
 		    (rfs->bmap || pb.is_dir)) {
 			pb.ino = new_inode;
@@ -2478,6 +2479,7 @@ remap_blocks:
 errout:
 	reset_com_err_hook();
 	rfs->old_fs->flags &= ~EXT2_FLAG_IGNORE_CSUM_ERRORS;
+	rfs->new_fs->flags &= ~EXT2_FLAG_IGNORE_CSUM_ERRORS;
 	if (rfs->bmap) {
 		ext2fs_free_extent_table(rfs->bmap);
 		rfs->bmap = 0;
@@ -3609,10 +3611,10 @@ static errcode_t reubicate_and_free_itables(ext2_resize_t rfs)
 }
 
 /******************************************************************************
-We will migrate the inodes in-place to the existing tables. We do not allocate 
-new itables when reducing the inode count. The advantage of this approach is 
-that we don't need any free blocks in the filesystem for this operation. It 
-could be done in a fs with zero free blocks, which might also be the reason to 
+We will migrate the inodes in-place to the existing tables. We do not allocate
+new itables when reducing the inode count. The advantage of this approach is
+that we don't need any free blocks in the filesystem for this operation. It
+could be done in a fs with zero free blocks, which might also be the reason to
 run the reducer: free some space for data. What follow is a simple proof that
 there is no risk of overwriting an inode before needing to read it.
 
@@ -3625,12 +3627,12 @@ inum: inode number
 This gives the inode number formula:
 inum = g * ipg + pos
 
-When reducing the inode count, we start from the highest inode number 
+When reducing the inode count, we start from the highest inode number
 and go down to 1.
 
 This operation shall not overwrite a needed inode before it is migrated:
 To overwrite a needed inode in a given g & pos before being migrated, its
-inum_old shall be less than its inum_new, as the migration loop is 
+inum_old shall be less than its inum_new, as the migration loop is
 moving backwards. So:
 
 inum_old < inum_new
@@ -3844,15 +3846,14 @@ static errcode_t fix_itables_stats_bigalloc(ext2_filsys fs, blk64_t start,
  */
 static errcode_t migrate_inodes_forward_loop(ext2_resize_t rfs)
 {
-	ext2_ino_t ino_num = 0;
+	ext2_ino_t ino_num;
 	struct ext2_inode *inode = NULL;
-	int inode_size = 0;
-	dgrp_t group, new_group = 0, old_group = 0;
-	errcode_t retval;
+	int inode_size = EXT2_INODE_SIZE(rfs->new_fs->super);
+	dgrp_t group, new_group, old_group;
+	errcode_t retval = 0;
 	blk64_t itable_start;
 	unsigned int len;
 
-	inode_size = EXT2_INODE_SIZE(rfs->new_fs->super);
 	inode = malloc(inode_size);
 	if (!inode) {
 		retval = ENOMEM;
@@ -3950,7 +3951,7 @@ static errcode_t migrate_inodes_forward_loop(ext2_resize_t rfs)
 static errcode_t allocate_new_itables(ext2_resize_t rfs)
 {
 	blk64_t itable_start;
-	errcode_t retval;
+	errcode_t retval = 0;
 	dgrp_t group = 0;
 	int len = 0;
 	dgrp_t prev_allocated_new_itables = rfs->allocated_new_itables;
@@ -4157,7 +4158,7 @@ search_for_space:
 				first_blk = blk2;
 				break;
 			}
-			 /* break inner loop, enter next if about failed search */
+			 /* break loop, enter next if about failed search */
 			if (blk2 > last_blk) {
 				blk = blk2;
 			}
