@@ -351,7 +351,7 @@ static ext2_ino_t parse_count_param(char *p, ext2_ino_t current_count)
 	unsigned long n;
 	ext2_ino_t res = 0;
 	ext2_ino_t MAX_INODE = 0xFFFFFFFF;
-	
+
 	if (p == NULL || p[0] == 0 || p[1] == 0)
 		return 0;
 
@@ -398,9 +398,9 @@ static errcode_t calculate_new_inodes_per_group(ext2_filsys fs,
 			blocksize = EXT2_BLOCK_SIZE(fs->super);
 	unsigned int	new_inode_count,
 			new_inodes_per_group,
-	    		inode_blocks_per_group_rounded,
-	    		required_inodes,
-	   		max_inode_blocks_per_group;
+			inode_blocks_per_group_rounded,
+			required_inodes,
+			max_inode_blocks_per_group;
 	blk64_t		free_space,
 			current_inode_blocks_space,
 			new_inode_blocks_space,
@@ -463,7 +463,6 @@ static errcode_t calculate_new_inodes_per_group(ext2_filsys fs,
 
 	new_inodes_per_group = ext2fs_div64_ceil(requested_count,
 						fs->group_desc_count);
-	
 
 	/*
 	 * Finally, make sure the number of inodes per group is a
@@ -572,16 +571,16 @@ static errcode_t calculate_new_inodes_per_group(ext2_filsys fs,
 
 	new_inode_blocks_space = ((blk64_t) inode_blocks_per_group_rounded)
 				* fs->group_desc_count * (blocksize / 1024);
-	    
+
 #ifdef RESIZE2FS_DEBUG
-	if (flags & RESIZE_DEBUG_INODECOUNT) {	    
-		printf("New inode count: %u\n", new_inode_count);    
+	if (flags & RESIZE_DEBUG_INODECOUNT) {
+		printf("New inode count: %u\n", new_inode_count);
 		printf("New inode ratio: %llu bytes-per-inode\n",
 		         ext2fs_blocks_count(fs->super) * blocksize
 		         / new_inode_count);
 		printf("New inodes per group: %u\n", new_inodes_per_group);
 		printf("New space used by inode tables: ");
-		if (new_inode_blocks_space > 1048576) {	
+		if (new_inode_blocks_space > 1048576) {
 		printf("%.2f GiB\n", (double)new_inode_blocks_space / 1048576);
 		} else if (new_inode_blocks_space > 1024) {
 			printf("%.2f MiB\n",
@@ -1038,6 +1037,11 @@ int main (int argc, char ** argv)
 			goto errout;
 		}
 	} else if (inode_count_param != 0) {
+                if (mount_flags & EXT2_MF_MOUNTED) {
+                        fprintf(stderr, _("Cannot change the inode count "
+                                "while the filesystem is mounted.\n"));
+                        goto errout;
+                }
 
 		new_inode_count = parse_count_param(inode_count_param,
 						  fs->super->s_inodes_count);
@@ -1111,8 +1115,8 @@ int main (int argc, char ** argv)
 	}
 	if (flags & (RESIZE_INCREASE_INODE_COUNT | RESIZE_DECREASE_INODE_COUNT) &&
 	    flags & (RESIZE_ENABLE_64BIT | RESIZE_DISABLE_64BIT)) {
-	    	fprintf(stderr,
-	    	_("Cannot change 64-bits mode and inode count simultaneously\n"));
+		fprintf(stderr,
+		_("Cannot change 64-bits mode and inode count simultaneously\n"));
 		goto errout;
 	}
 	if ((flags & RESIZE_ENABLE_64BIT) &&

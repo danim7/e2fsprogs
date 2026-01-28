@@ -124,7 +124,7 @@ static int lazy_itable_init;
 /*
  * This is the top-level routine which does the dirty deed....
  */
-errcode_t resize_fs(ext2_filsys fs, blk64_t *new_size, 
+errcode_t resize_fs(ext2_filsys fs, blk64_t *new_size,
 	    unsigned int new_inodes_per_group, int flags,
 	    errcode_t (*progress)(ext2_resize_t rfs, int pass,
 					  unsigned long cur,
@@ -243,7 +243,7 @@ retry:
 	if (retval)
 		goto errout;
 	print_resource_track(rfs, &rtrack, fs->io);
-	
+
 	if ((rfs->flags & RESIZE_INCREASE_INODE_COUNT) &&
 	    rfs->allocated_new_itables < rfs->new_fs->group_desc_count)
 		goto retry;
@@ -328,10 +328,10 @@ errout:
 	if (rfs->itable_buf)
 		ext2fs_free_mem(&rfs->itable_buf);
 	if (rfs->evacuated_inodes)
-		free(rfs->evacuated_inodes);
+		ext2fs_free_mem(&rfs->evacuated_inodes);
 	if (rfs->new_itable_status)
-		free(rfs->new_itable_status);
-		
+		ext2fs_free_mem(&rfs->new_itable_status);
+
 	ext2fs_free_mem(&rfs);
 	return retval;
 }
@@ -1193,7 +1193,7 @@ static errcode_t adjust_superblock(ext2_resize_t rfs, blk64_t new_size)
 	ext2fs_mark_super_dirty(fs);
 	ext2fs_mark_bb_dirty(fs);
 	ext2fs_mark_ib_dirty(fs);
-	
+
 	if (rfs->flags & (RESIZE_INCREASE_INODE_COUNT | RESIZE_DECREASE_INODE_COUNT))
 		return 0;
 
@@ -1433,7 +1433,7 @@ static errcode_t blocks_to_move(ext2_resize_t rfs)
 	ext2_filsys 	fs, old_fs;
 	ext2fs_block_bitmap	meta_bmap, new_meta_bmap = NULL;
 	int		flex_bg;
-	
+
 	if (rfs->flags
 		& (RESIZE_INCREASE_INODE_COUNT | RESIZE_DECREASE_INODE_COUNT))
 		return 0;
@@ -1864,7 +1864,7 @@ static errcode_t block_mover(ext2_resize_t rfs)
 	ext2_badblocks_list	badblock_list = 0;
 	int			bb_modified = 0;
 	ext2_filsys             fs_bb_inode = old_fs;
-	
+
 	if (rfs->flags & RESIZE_DECREASE_INODE_COUNT)
 	        return 0;
 
@@ -1971,12 +1971,12 @@ static errcode_t block_mover(ext2_resize_t rfs)
 			retval = io_channel_write_blk64(fs->io, new_blk, c,
 							rfs->itable_buf);
 			if (retval) goto errout;
-			
+
 			if (rfs->flags & RESIZE_INCREASE_INODE_COUNT) {
 				ext2fs_block_alloc_stats_range(fs, old_blk,
-							       	c, -1);
+								c, -1);
 				ext2fs_block_alloc_stats_range(old_fs, old_blk,
-							       	c, -1);
+								c, -1);
 			}
 			size -= c;
 			new_blk += c;
@@ -2107,7 +2107,7 @@ static errcode_t progress_callback(ext2_filsys fs,
 }
 
 static errcode_t migrate_ea_block(ext2_extent bmap, ext2_filsys fs,
-		       	ext2_ino_t ino, struct ext2_inode *inode, int *changed)
+			ext2_ino_t ino, struct ext2_inode *inode, int *changed)
 {
 	char *buf = NULL;
 	blk64_t new_block;
@@ -2360,7 +2360,7 @@ static errcode_t inode_scan_and_fix(ext2_resize_t rfs)
 		if (ino > 1 && ext2fs_group_of_ino(rfs->old_fs, ino)
 			!= ext2fs_group_of_ino(rfs->old_fs, ino-1))
 			      progress_callback(rfs->old_fs, NULL,
-			  	ext2fs_group_of_ino(rfs->old_fs, ino-1), rfs);
+				ext2fs_group_of_ino(rfs->old_fs, ino-1), rfs);
 
 		if (inode->i_links_count == 0 && ino != EXT2_RESIZE_INO)
 			continue; /* inode not in use */
@@ -2639,7 +2639,7 @@ static errcode_t move_itables(ext2_resize_t rfs)
 	int		to_move, moved;
 	unsigned int	j;
 	ext2fs_block_bitmap	new_bmap = NULL;
-	
+
 	if (rfs->flags
 	    & (RESIZE_INCREASE_INODE_COUNT | RESIZE_DECREASE_INODE_COUNT))
 		return 0;
@@ -3457,7 +3457,7 @@ blk64_t calculate_minimum_resize_size(ext2_filsys fs, int flags)
  * The function ext2fs_block_alloc_stats_range() doesn't expect to
  * receive unaligned blocks or uneven lengths, which may be the case
  * with itables for bigalloc filesystems. This function will modify the input
- * values to compensate for those issues before calling 
+ * values to compensate for those issues before calling
  * ext2fs_block_alloc_stats_range(). We assume any other metadata (blockmaps,
  * inodemaps, etc...) is always placed before inode tables if they share the
  * same cluster (which is how mkfs creates the filesystems), so we avoid to
@@ -3663,7 +3663,7 @@ static errcode_t migrate_inodes_backwards_loop(ext2_resize_t rfs)
 #ifdef RESIZE2FS_DEBUG
 		if (rfs->flags & RESIZE_DEBUG_INODECOUNT)
 			printf("Migrating inode %u to new position: old group: "
-				"%u, new group: %u, read_retval: %li", ino, 
+				"%u, new group: %u, read_retval: %li", ino,
 				ext2fs_group_of_ino(rfs->old_fs, ino),
 				ext2fs_group_of_ino(rfs->new_fs, ino), retval);
 #endif
@@ -3764,24 +3764,15 @@ static errcode_t init_increase_inode_count(ext2_resize_t rfs)
 	if (!(rfs->flags & RESIZE_INCREASE_INODE_COUNT))
 		return 0;
 
-	rfs->evacuated_inodes =
-	    (unsigned int *)calloc(rfs->new_fs->group_desc_count,
-				   sizeof(unsigned int));
-	if (rfs->evacuated_inodes == NULL) {
-		fprintf(stderr, "alloc_error evacuated_inodes\n");
-		retval = ENOMEM;
+	retval = ext2fs_get_memzero(rfs->new_fs->group_desc_count *
+			sizeof(unsigned int), &rfs->evacuated_inodes);
+	if (retval)
 		goto errout;
-	}
 
-	/* using calloc as itable_status_not_allocated = 0 */
-	rfs->new_itable_status =
-	    (itable_status *) calloc(rfs->new_fs->group_desc_count,
-				     sizeof(itable_status));
-	if (rfs->new_itable_status == NULL) {
-		fprintf(stderr, "alloc_error new_itable_status\n");
-		retval = ENOMEM;
+	retval = ext2fs_get_memzero(rfs->new_fs->group_desc_count *
+			sizeof(itable_status), &rfs->new_itable_status);
+	if (retval)
 		goto errout;
-	}
 
 /*avoid early stop if the first iteration doesn't allocate any new inode table*/
 #define ALLOCATED_NEW_ITABLE_FIRST_ITERATION 0xFFFFFFFF
@@ -3816,7 +3807,7 @@ static void fix_itables_stats_bigalloc(ext2_filsys fs, blk64_t start,
 
 	cluster_size = EXT2FS_CLUSTER_RATIO(fs);
 
-	/*we assume start of the new itable given by the 
+	/*we assume start of the new itable given by the
 	ext2fs_allocate_group_table function is aligned
 	with start of the cluster, we only do the fix for
 	end of itable */
@@ -3964,8 +3955,7 @@ static errcode_t allocate_new_itables(ext2_resize_t rfs)
 	for (group = 0; group < rfs->new_fs->group_desc_count; group++) {
 		if (rfs->new_itable_status[group] != itable_status_not_allocated)
 		    continue;
-		    
-	    
+
 		ext2fs_inode_table_loc_set(rfs->new_fs, group, 0);
 		retval = ext2fs_allocate_group_table(rfs->new_fs, group, 0);
 		if (retval == EXT2_ET_BLOCK_ALLOC_FAIL) {
@@ -3984,7 +3974,7 @@ static errcode_t allocate_new_itables(ext2_resize_t rfs)
 			if (!ext2fs_has_feature_flex_bg(rfs->new_fs->super))
 				ext2fs_block_alloc_stats_range(rfs->new_fs,
 							itable_start, len, +1);
-							
+
 			ext2fs_block_alloc_stats_range(rfs->old_fs,
 						       itable_start,
 						       len, +1);
@@ -4018,7 +4008,6 @@ static errcode_t allocate_new_itables(ext2_resize_t rfs)
 				" group %u with retval %li\n", group, retval);
 			goto errout;
 		}
-		
 	}
 
 	io_channel_flush(rfs->new_fs->io);
@@ -4040,7 +4029,7 @@ static errcode_t allocate_new_itables(ext2_resize_t rfs)
 	return retval;
 }
 
-/* 
+/*
  * If there are no contiguous free blocks to allocate
  * the new inode tables, this function will mark blocks
  * to be moved to make room for them
@@ -4069,7 +4058,7 @@ static errcode_t make_room_for_new_itables(ext2_resize_t rfs)
 
 	if (rfs->allocated_new_itables == fs->group_desc_count)
 		return 0;
-	
+
 	retval = ext2fs_allocate_block_bitmap(fs, _("blocks to be moved"),
 					 &rfs->move_blocks);
 	if (retval)
@@ -4119,7 +4108,7 @@ static errcode_t make_room_for_new_itables(ext2_resize_t rfs)
 		}
 		if (rfs->new_itable_status[g] != itable_status_not_allocated)
 			continue;
-			 
+
 		if (!ext2fs_has_feature_flex_bg(fs->super)) {
 			first_blk = ext2fs_group_first_block2(fs, g);
 			last_blk = (g == fs->group_desc_count - 1) ?
@@ -4187,4 +4176,3 @@ search_for_space:
 	return retval;
 
 }
-

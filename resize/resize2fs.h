@@ -104,7 +104,7 @@ struct resource_track {
 };
 
 typedef enum {
-	itable_status_not_allocated = 0,	/*must be zero for calloc() */
+	itable_status_not_allocated = 0,	/*must be zero*/
 	itable_status_allocated = 1,
 	itable_status_populated = 2
 } itable_status;
@@ -124,7 +124,7 @@ struct ext2_resize_struct {
 	blk64_t		needed_blocks;
 	int		flags;
 	char		*itable_buf;
-	
+
 	/*
 	 * Specific fields to change inode count
 	 */
