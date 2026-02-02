@@ -1972,12 +1972,6 @@ static errcode_t block_mover(ext2_resize_t rfs)
 							rfs->itable_buf);
 			if (retval) goto errout;
 
-			if (rfs->flags & RESIZE_INCREASE_INODE_COUNT) {
-				ext2fs_block_alloc_stats_range(fs, old_blk,
-								c, -1);
-				ext2fs_block_alloc_stats_range(old_fs, old_blk,
-								c, -1);
-			}
 			size -= c;
 			new_blk += c;
 			old_blk += c;
@@ -2303,6 +2297,8 @@ static errcode_t inode_scan_and_fix(ext2_resize_t rfs)
 	int			inode_size;
 	int			update_ea_inode_refs = 0;
 	ext2_filsys		fs = rfs->old_fs;
+	blk64_t			old_blk, new_blk;
+	__u64			size;
 
 	if ((rfs->old_fs->group_desc_count <=
 	     rfs->new_fs->group_desc_count) &&
@@ -2469,6 +2465,24 @@ remap_blocks:
 					   start_to_move);
 		if (retval)
 			goto errout;
+	}
+	if (rfs->bmap && rfs->flags & RESIZE_INCREASE_INODE_COUNT) {
+		retval = ext2fs_iterate_extent(rfs->bmap, 0, 0, 0);
+		if (retval) goto errout;
+
+		while (1) {
+			retval = ext2fs_iterate_extent(rfs->bmap, &old_blk,
+							&new_blk, &size);
+			if (retval) goto errout;
+			if (!size)
+				break;
+			old_blk = C2B(old_blk);
+			size = C2B(size);
+			ext2fs_block_alloc_stats_range(rfs->new_fs, old_blk,
+								size, -1);
+			ext2fs_block_alloc_stats_range(rfs->old_fs, old_blk,
+								size, -1);
+		}
 	}
 	io_channel_flush(rfs->old_fs->io);
 	progress_callback(rfs->old_fs, NULL, fs->group_desc_count-1, rfs);
